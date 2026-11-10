@@ -1,110 +1,407 @@
 <!DOCTYPE html>
 <html lang="en-IE">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Paste Safe — local AI paste scrubber (draft / experiment)</title>
-  <style>
-    :root {
-      --bg:#f4f6f8; --card:#fff; --ink:#15202b; --muted:#5b6b7c;
-      --ok:#0f6b3c; --okbg:#e7f6ee; --warn:#8a5a00; --warnbg:#fff6e0;
-      --bad:#9b1c1c; --badbg:#fdecec; --line:#d9e1ea; --accent:#1f4d7a;
-    }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); line-height:1.45; }
-    .wrap { max-width:920px; margin:0 auto; padding:1.25rem 1rem 3rem; }
-    .banner { background:var(--warnbg); border:1px solid #f0d7a8; color:var(--warn); padding:.75rem 1rem; border-radius:10px; font-size:.92rem; margin-bottom:1rem; }
-    h1 { font-size:clamp(1.4rem,3.5vw,1.9rem); margin:.2rem 0 .4rem; }
-    .sub { color:var(--muted); margin:0 0 1.2rem; }
-    .grid { display:grid; gap:1rem; }
-    @media (min-width:860px) { .grid-2 { grid-template-columns:1fr 1fr; } }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem; }
-    label { font-weight:600; display:block; margin-bottom:.4rem; }
-    textarea { width:100%; min-height:180px; resize:vertical; font:inherit; padding:.75rem; border:1px solid var(--line); border-radius:10px; }
-    .row { display:flex; flex-wrap:wrap; gap:.5rem; margin:.75rem 0; }
-    button { font:inherit; font-weight:600; border:0; border-radius:10px; padding:.65rem 1rem; cursor:pointer; }
-    .primary { background:var(--accent); color:#fff; }
-    .ghost { background:#eef3f8; color:var(--ink); }
-    .muted { color:var(--muted); font-size:.9rem; }
-    .stat { display:inline-flex; align-items:center; gap:.35rem; background:#eef3f8; border-radius:999px; padding:.25rem .65rem; font-size:.85rem; font-weight:600; }
-    .stat.bad { background:var(--badbg); color:var(--bad); }
-    .stat.ok { background:var(--okbg); color:var(--ok); }
-    .hit { list-style:none; padding:0; margin:0; }
-    .hit li { border-top:1px solid var(--line); padding:.65rem 0; font-size:.92rem; }
-    .hit li:first-child { border-top:0; }
-    .tag { display:inline-block; font-size:.75rem; font-weight:700; background:var(--badbg); color:var(--bad); border-radius:6px; padding:.1rem .4rem; margin-right:.35rem; }
-    mark.flag { background:#ffe08a; padding:0 .1rem; border-radius:2px; }
-    mark.clean { background:#b7f0cf; padding:0 .1rem; border-radius:2px; }
-    pre.out { white-space:pre-wrap; word-break:break-word; background:#0f1720; color:#e8eef5; padding:.9rem; border-radius:10px; min-height:140px; font-size:.9rem; }
-    details { margin-top:.75rem; }
-    summary { cursor:pointer; font-weight:600; }
-    footer { margin-top:1.5rem; font-size:.82rem; color:var(--muted); }
-    .passfail { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.82rem; }
-    .passfail .p { color:var(--ok); } .passfail .f { color:var(--bad); }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paste Safe: scrub personal details before you paste into AI (free, runs in your browser)</title>
+<meta name="description" content="Paste Safe is a free, browser-only tool that flags emails, phone numbers, IBAN-like and PPS-like numbers before you paste text into an AI chat. Pattern matching only, not a legal or GDPR tool.">
+<meta name="color-scheme" content="dark">
+<style>
+:root{
+  --bg:#07090f; --bg2:#0d1220; --card:rgba(255,255,255,.045); --card2:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.10); --line2:rgba(255,255,255,.18);
+  --ink:#eef2fb; --muted:#9aa6bf; --dim:#6d7891;
+  --a1:#7c5cff; --a2:#22d3ee; --a3:#34f5a5; --hot:#ff5d8f; --amber:#ffc65c;
+  --r:18px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;overflow-x:clip}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--a2)}
+code,pre,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.wrap{max-width:1120px;margin:0 auto;padding:0 1.1rem}
+/* background glow */
+.glow{position:fixed;inset:-20vmax;z-index:-1;pointer-events:none;
+  background:
+   radial-gradient(40vmax 30vmax at 15% 10%,rgba(124,92,255,.28),transparent 60%),
+   radial-gradient(35vmax 28vmax at 90% 20%,rgba(34,211,238,.18),transparent 60%),
+   radial-gradient(40vmax 30vmax at 60% 100%,rgba(52,245,165,.10),transparent 60%);
+  animation:drift 22s ease-in-out infinite alternate}
+@keyframes drift{to{transform:translate3d(-3vmax,2vmax,0) rotate(6deg)}}
+.grid-bg{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:56px 56px;mask-image:radial-gradient(ellipse at 50% 0%,#000 20%,transparent 70%);-webkit-mask-image:radial-gradient(ellipse at 50% 0%,#000 20%,transparent 70%)}
+/* draft ribbon */
+.draft{background:linear-gradient(90deg,rgba(255,198,92,.16),rgba(255,93,143,.12));border-bottom:1px solid rgba(255,198,92,.3);color:#ffe2a8;font-size:.82rem;text-align:center;padding:.5rem 1rem}
+/* nav */
+nav{display:flex;align-items:center;justify-content:space-between;padding:1rem 0;gap:1rem}
+.logo{display:flex;align-items:center;gap:.55rem;font-weight:800;letter-spacing:-.02em;color:var(--ink);text-decoration:none;font-size:1.1rem}
+.logo i{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:conic-gradient(from 210deg,var(--a1),var(--a2),var(--a3),var(--a1));box-shadow:0 0 24px rgba(124,92,255,.5)}
+.logo i::after{content:"";width:12px;height:12px;border:2.5px solid #07090f;border-radius:3px;transform:rotate(45deg)}
+.navlinks{display:none;gap:1.4rem;font-size:.92rem}
+.navlinks a{color:var(--muted);text-decoration:none}.navlinks a:hover{color:var(--ink)}
+@media(min-width:820px){.navlinks{display:flex}}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;font:inherit;font-weight:700;border-radius:12px;padding:.85rem 1.2rem;text-decoration:none;cursor:pointer;border:1px solid transparent;transition:transform .15s,box-shadow .2s,background .2s}
+.btn:active{transform:translateY(1px)}
+.btn-main{color:#07090f;background:linear-gradient(135deg,var(--a3),var(--a2));box-shadow:0 10px 30px -8px rgba(34,211,238,.55)}
+.btn-main:hover{box-shadow:0 14px 38px -8px rgba(52,245,165,.7)}
+.btn-ghost{color:var(--ink);background:var(--card);border-color:var(--line2)}
+.btn-ghost:hover{background:var(--card2)}
+.btn-sm{padding:.55rem .85rem;font-size:.88rem;border-radius:10px}
+/* hero */
+.hero>*{min-width:0}
+.hero{padding:2.2rem 0 3rem;display:grid;gap:2.2rem;align-items:center}
+@media(min-width:960px){.hero{grid-template-columns:1.02fr 1fr;padding:3.5rem 0 4.5rem}}
+.pill{display:inline-flex;align-items:center;gap:.5rem;font-size:.8rem;font-weight:600;color:var(--muted);border:1px solid var(--line2);background:var(--card);padding:.35rem .75rem;border-radius:999px}
+.pill b{width:8px;height:8px;border-radius:50%;background:var(--a3);box-shadow:0 0 10px var(--a3)}
+h1{font-size:clamp(2.3rem,7.2vw,4.1rem);line-height:1.02;letter-spacing:-.04em;margin:1rem 0 1rem;font-weight:850}
+.grad{background:linear-gradient(100deg,var(--a3) 0%,var(--a2) 40%,var(--a1) 85%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.strike{background-image:linear-gradient(var(--hot),var(--hot));background-repeat:no-repeat;background-position:0 58%;background-size:0% .11em;-webkit-box-decoration-break:clone;box-decoration-break:clone;animation:strike 1s .7s cubic-bezier(.7,0,.3,1) forwards}
+@keyframes strike{to{background-size:100% .11em}}
+.lead{font-size:clamp(1.05rem,2.3vw,1.22rem);color:var(--muted);max-width:36rem;margin:0 0 1.6rem}
+.lead strong{color:var(--ink)}
+.ctas{display:flex;flex-wrap:wrap;gap:.7rem}
+.trust{display:flex;flex-wrap:wrap;gap:.5rem 1.1rem;margin-top:1.4rem;font-size:.86rem;color:var(--muted)}
+.trust span::before{content:"✓ ";color:var(--a3);font-weight:800}
+/* demo */
+.demo{position:relative;border-radius:22px;padding:1px;background:linear-gradient(140deg,rgba(124,92,255,.7),rgba(34,211,238,.35) 40%,rgba(255,255,255,.06) 70%)}
+.demo-in{border-radius:21px;background:linear-gradient(180deg,#0e1424,#0a0e19);overflow:hidden;box-shadow:0 40px 80px -30px rgba(0,0,0,.8),0 0 80px -20px rgba(124,92,255,.35)}
+.bar{display:flex;align-items:center;gap:.45rem;padding:.75rem 1rem;border-bottom:1px solid var(--line);font-size:.78rem;color:var(--dim)}
+.bar i{width:10px;height:10px;border-radius:50%;background:#2a3147}.bar i:nth-child(1){background:#ff5f57}.bar i:nth-child(2){background:#febc2e}.bar i:nth-child(3){background:#28c840}
+.bar .t{margin-left:.5rem}
+.stage{display:flex;gap:.5rem;padding:.8rem 1rem 0}
+.step{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:.3rem .6rem;border-radius:999px;color:var(--dim);border:1px solid var(--line);transition:all .35s}
+.step.on{color:#07090f;background:var(--a2);border-color:var(--a2)}
+.step.on.s2{background:var(--amber);border-color:var(--amber)}
+.step.on.s3{background:var(--a3);border-color:var(--a3)}
+.msg{padding:1rem 1.1rem 1.2rem;font-size:.95rem;min-height:15.5rem;position:relative}
+.msg p{margin:0 0 .55rem}
+.pii{position:relative;border-radius:5px;padding:0 .15rem;transition:background .4s,color .4s,box-shadow .4s}
+.demo.s2 .pii{background:rgba(255,93,143,.22);color:#ffd0de;box-shadow:inset 0 -2px 0 var(--hot)}
+.pii .ph{display:none}
+.demo.s3 .pii{background:rgba(52,245,165,.16);color:var(--a3);box-shadow:none}
+.demo.s3 .pii .ph{display:inline;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em;font-weight:700}
+.demo.s3 .pii .orig{display:none}
+.scanline{position:absolute;left:0;right:0;height:46px;top:-60px;pointer-events:none;background:linear-gradient(180deg,transparent,rgba(34,211,238,.20),transparent);border-bottom:1px solid rgba(34,211,238,.6)}
+.demo.scanning .scanline{animation:scan 1.3s ease-in-out}
+@keyframes scan{from{top:-60px}to{top:100%}}
+.dfoot{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.75rem 1.1rem;border-top:1px solid var(--line);font-size:.8rem;color:var(--muted)}
+.count{font-weight:800;color:var(--ink)}
+.demo.s2 .count{color:var(--hot)}.demo.s3 .count{color:var(--a3)}
+.sample-note{font-size:.72rem;color:var(--dim)}
+/* sections */
+section.blk{padding:3.6rem 0;border-top:1px solid var(--line)}
+.kicker{font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--a2);margin:0 0 .6rem}
+h2{font-size:clamp(1.7rem,4.6vw,2.6rem);line-height:1.1;letter-spacing:-.03em;margin:0 0 .8rem;font-weight:800}
+.sec-lead{color:var(--muted);max-width:40rem;margin:0 0 2rem;font-size:1.05rem}
+.cards{display:grid;gap:1rem}
+@media(min-width:760px){.cards.c3{grid-template-columns:repeat(3,1fr)}.cards.c2{grid-template-columns:repeat(2,1fr)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:1.3rem 1.3rem 1.2rem;position:relative;backdrop-filter:blur(6px)}
+.card h3{margin:.3rem 0 .4rem;font-size:1.12rem;letter-spacing:-.01em}
+.card p{margin:0;color:var(--muted);font-size:.95rem}
+.num{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-weight:850;color:#07090f;background:linear-gradient(135deg,var(--a2),var(--a1))}
+.card:nth-child(2) .num{background:linear-gradient(135deg,var(--amber),var(--hot))}
+.card:nth-child(3) .num{background:linear-gradient(135deg,var(--a3),var(--a2))}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.6rem}
+.chip{font-size:.84rem;padding:.4rem .75rem;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--ink)}
+.chip code{color:var(--a3)}
+.who li{margin:.45rem 0;color:var(--muted)}.who li strong{color:var(--ink)}
+.who ul{padding-left:1.1rem;margin:.4rem 0 0}
+.no h3{color:#ffb3c8}
+/* tool */
+.toolwrap{border-radius:24px;padding:1px;background:linear-gradient(140deg,rgba(52,245,165,.55),rgba(34,211,238,.3) 35%,rgba(124,92,255,.45))}
+.tool{border-radius:23px;background:#0a0e19;padding:1.1rem}
+@media(min-width:760px){.tool{padding:1.5rem}}
+.toolhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.6rem;align-items:center;margin-bottom:1rem}
+.toolhead h3{margin:0;font-size:1.25rem}
+.local{font-size:.78rem;font-weight:700;color:var(--a3);border:1px solid rgba(52,245,165,.4);background:rgba(52,245,165,.08);padding:.3rem .65rem;border-radius:999px}
+.tgrid{display:grid;gap:1rem}
+@media(min-width:900px){.tgrid{grid-template-columns:1.1fr .9fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1rem}
+.panel label,.plabel{font-weight:700;display:block;margin-bottom:.5rem;font-size:.92rem}
+textarea{width:100%;min-height:210px;resize:vertical;font:inherit;font-size:.93rem;color:var(--ink);background:#060911;border:1px solid var(--line2);border-radius:12px;padding:.85rem;outline:none;transition:border-color .2s,box-shadow .2s}
+textarea:focus{border-color:var(--a2);box-shadow:0 0 0 3px rgba(34,211,238,.18)}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.8rem 0 .6rem}
+.tool button{font:inherit;font-weight:700;font-size:.88rem;border-radius:10px;padding:.6rem .9rem;cursor:pointer;border:1px solid var(--line2);background:var(--card2);color:var(--ink)}
+.tool button:hover{background:rgba(255,255,255,.11)}
+.tool button.primary{background:linear-gradient(135deg,var(--a3),var(--a2));color:#07090f;border-color:transparent}
+.tool button.sample{border-color:rgba(255,198,92,.55);color:var(--amber)}
+.muted{color:var(--muted);font-size:.9rem}
+.stat{display:inline-flex;align-items:center;gap:.35rem;border-radius:999px;padding:.2rem .6rem;font-size:.8rem;font-weight:800;background:var(--card2)}
+.stat.bad{background:rgba(255,93,143,.16);color:#ff9dbb}
+.stat.ok{background:rgba(52,245,165,.14);color:var(--a3)}
+.hit{list-style:none;padding:0;margin:0;max-height:300px;overflow:auto}
+.hit li{border-top:1px solid var(--line);padding:.6rem 0;font-size:.88rem;word-break:break-word}
+.hit li:first-child{border-top:0}
+.hit code{color:#ffd0de}
+.tag{display:inline-block;font-size:.7rem;font-weight:800;background:rgba(255,93,143,.16);color:#ff9dbb;border-radius:6px;padding:.12rem .45rem;margin-right:.35rem;text-transform:uppercase;letter-spacing:.03em}
+mark.flag{background:rgba(255,198,92,.28);color:#ffe2a8;padding:0 .12rem;border-radius:3px}
+pre.out{white-space:pre-wrap;word-break:break-word;background:#060911;border:1px solid var(--line);color:#d9fbe9;padding:.9rem;border-radius:12px;min-height:130px;font-size:.88rem;margin:0}
+#context{margin-top:.8rem;white-space:pre-wrap;word-break:break-word;font-size:.88rem}
+details{margin-top:1rem}
+summary{cursor:pointer;font-weight:700;font-size:.9rem;color:var(--muted)}
+.passfail{font-size:.8rem;background:#060911;border:1px solid var(--line);padding:.8rem;border-radius:10px;white-space:pre-wrap}
+.passfail .p{color:var(--a3)}.passfail .f{color:var(--hot)}
+.toolwarn{margin-top:1rem;font-size:.84rem;color:#ffe2a8;background:rgba(255,198,92,.08);border:1px solid rgba(255,198,92,.28);padding:.7rem .9rem;border-radius:12px}
+/* offer */
+.offer{display:grid;gap:1.2rem;align-items:stretch}
+@media(min-width:900px){.offer{grid-template-columns:1.1fr .9fr}}
+.price-card{border-radius:22px;padding:1px;background:linear-gradient(160deg,var(--a1),rgba(34,211,238,.4) 50%,rgba(255,255,255,.08))}
+.price-in{height:100%;border-radius:21px;background:linear-gradient(180deg,#121735,#0b0f1d);padding:1.6rem}
+.badge{display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);border:1px dashed rgba(255,198,92,.6);padding:.3rem .6rem;border-radius:8px}
+.price{font-size:3.4rem;font-weight:850;letter-spacing:-.04em;margin:.6rem 0 0;line-height:1}
+.price small{font-size:1rem;color:var(--muted);font-weight:600;letter-spacing:0}
+.ticks{list-style:none;padding:0;margin:1.2rem 0}
+.ticks li{padding:.35rem 0 .35rem 1.6rem;position:relative;color:var(--muted)}
+.ticks li::before{content:"";position:absolute;left:0;top:.72rem;width:.9rem;height:.5rem;border-left:2.5px solid var(--a3);border-bottom:2.5px solid var(--a3);transform:rotate(-45deg)}
+.ticks.x li::before{border-color:var(--hot);border-bottom:0;width:.8rem;height:0;top:.95rem;transform:none;border-left:0;border-top:2.5px solid var(--hot)}
+.small{font-size:.82rem;color:var(--dim)}
+/* limits */
+.limits{border-radius:20px;border:1px solid rgba(255,93,143,.35);background:linear-gradient(180deg,rgba(255,93,143,.07),rgba(255,93,143,.02));padding:1.5rem}
+.limits h2{font-size:clamp(1.5rem,4vw,2.1rem)}
+.limits ul{margin:.6rem 0 0;padding-left:1.15rem}.limits li{margin:.5rem 0;color:#e4c9d3}
+.limits li strong{color:#fff}
+/* faq */
+.faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;margin:0 0 .7rem}
+.faq summary{color:var(--ink);font-size:1rem;list-style:none;display:flex;justify-content:space-between;gap:1rem}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";color:var(--a2);font-weight:800;font-size:1.2rem;line-height:1;transition:transform .2s}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq details p{color:var(--muted);margin:.7rem 0 0}
+/* final */
+.final{text-align:center;padding:4rem 0}
+.final h2{font-size:clamp(2rem,6vw,3.2rem)}
+.final .ctas{justify-content:center}
+footer{border-top:1px solid var(--line);padding:2rem 0 3rem;font-size:.84rem;color:var(--dim)}
+footer .fr{display:flex;flex-wrap:wrap;justify-content:space-between;gap:1rem}
+footer a{color:var(--muted)}
+/* reveal */
+.rv{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none}
+  .strike{background-size:100% .11em}
+}
+</style>
 </head>
 <body>
-<main class="wrap">
-  <div class="banner">
-    <strong>Local experiment draft — not a legal / GDPR compliance tool.</strong>
-    Everything runs in your browser. Text is not uploaded anywhere by this page.
-    Flags are pattern guesses only. Always do a human check before pasting into any AI tool.
-  </div>
+<div class="glow" aria-hidden="true"></div>
+<div class="grid-bg" aria-hidden="true"></div>
 
-  <h1>Paste Safe</h1>
-  <p class="sub">Scan text for common personal-data patterns before you paste it into an AI chat. Free local tool · AI Made Simple experiment.</p>
+<div class="draft"><strong>Early version.</strong> The free tool works. The €9/month drop is an untested idea and is <strong>not on sale</strong>. There are no customers or reviews yet, and none are shown here.</div>
 
-  <div class="grid grid-2">
-    <section class="card">
-      <label for="input">Paste your draft text</label>
-      <textarea id="input" placeholder="Paste a SAMPLE message here (use fake details for demos)…"></textarea>
-      <div class="row">
-        <button class="primary" id="scanBtn" type="button">Scan</button>
-        <button class="ghost" id="scrubBtn" type="button">Replace flags with placeholders</button>
-        <button class="ghost" id="copyBtn" type="button">Copy scrubbed</button>
-        <button class="ghost" id="sampleBtn" type="button">Load SAMPLE</button>
-        <button class="ghost" id="clearBtn" type="button">Clear</button>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="#top"><i aria-hidden="true"></i>Paste Safe</a>
+    <div class="navlinks">
+      <a href="#how">How it works</a><a href="#tool">Try it</a><a href="#drop">Monthly drop</a><a href="#limits">Limits</a><a href="#faq">FAQ</a>
+    </div>
+    <a class="btn btn-ghost btn-sm" href="#tool">Try free</a>
+  </nav>
+
+  <header class="hero" id="top">
+    <div>
+      <span class="pill"><b></b>Free · runs in your browser · no sign-up</span>
+      <h1>Paste into AI.<br><span class="strike">Not your clients' details.</span><br><span class="grad">Scrub it first.</span></h1>
+      <p class="lead">Paste Safe flags <strong>emails, Irish mobiles, IBAN-like and PPS-like numbers</strong> in your text and swaps them for placeholders like <code>[EMAIL]</code>, so you can see them <strong>before</strong> you paste into ChatGPT, Gemini, Copilot or any AI chat.</p>
+      <div class="ctas">
+        <a class="btn btn-main" href="#tool">Scrub some text now ↓</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
       </div>
-      <p class="muted" id="summary">No scan yet.</p>
-    </section>
+      <div class="trust"><span>Text stays on your device</span><span>No account</span><span>Open source (MIT)</span></div>
+    </div>
 
-    <section class="card">
-      <label>Findings</label>
-      <ul class="hit" id="hits"><li class="muted">Run a scan to see matches.</li></ul>
-    </section>
+    <div class="demo rv" id="demo" aria-label="Animated example: a message with fake personal details being scanned and scrubbed">
+      <div class="demo-in">
+        <div class="bar"><i></i><i></i><i></i><span class="t mono">draft-reply.txt</span></div>
+        <div class="stage" aria-hidden="true">
+          <span class="step s1" data-s="1">1 · Paste</span><span class="step s2" data-s="2">2 · Flag</span><span class="step s3" data-s="3">3 · Scrub</span>
+        </div>
+        <div class="msg">
+          <div class="scanline"></div>
+          <p>Hi, can you help me reply to this client?</p>
+          <p>"Hi, it's Nora. Email me at <span class="pii"><span class="orig">nora.demo@example.ie</span><span class="ph">[EMAIL]</span></span> or ring <span class="pii"><span class="orig">087 123 4567</span><span class="ph">[PHONE]</span></span>. Refund to <span class="pii"><span class="orig">IE29AIBK93115212345678</span><span class="ph">[IBAN]</span></span> please. My PPS is <span class="pii"><span class="orig">1234567T</span><span class="ph">[PPS_OR_ID]</span></span>."</p>
+          <p>Keep it polite and short.</p>
+        </div>
+        <div class="dfoot"><span><span class="count" id="dcount">Ready</span></span><span class="sample-note">Fake sample details</span></div>
+      </div>
+    </div>
+  </header>
+</div>
+
+<section class="blk" id="how">
+  <div class="wrap">
+    <p class="kicker">How it works</p>
+    <h2>Three steps, about ten seconds.</h2>
+    <p class="sec-lead">No install and no upload. The checking is done by JavaScript running in this page, on your own device.</p>
+    <div class="cards c3">
+      <div class="card rv"><div class="num">1</div><h3>Paste your draft</h3><p>Drop in the email, client note or message you were about to give an AI.</p></div>
+      <div class="card rv"><div class="num">2</div><h3>See what's flagged</h3><p>Paste Safe highlights anything that looks like an email, phone number, IBAN, PPS number, password or address.</p></div>
+      <div class="card rv"><div class="num">3</div><h3>Copy the scrubbed version</h3><p>Flags become placeholders like <code>[EMAIL]</code> and <code>[PHONE]</code>. Read it over yourself, then paste.</p></div>
+    </div>
+    <div class="chips">
+      <span class="chip">Emails → <code>[EMAIL]</code></span>
+      <span class="chip">Irish mobiles / +353 → <code>[PHONE]</code></span>
+      <span class="chip">IBAN-like → <code>[IBAN]</code></span>
+      <span class="chip">PPS-like → <code>[PPS_OR_ID]</code></span>
+      <span class="chip">Long digit runs → <code>[NUMBER]</code></span>
+      <span class="chip">Password cues → <code>[PASSWORD_REMOVED]</code></span>
+      <span class="chip">Address cues → <code>[ADDRESS_DETAIL]</code></span>
+    </div>
   </div>
+</section>
 
-  <section class="card" style="margin-top:1rem">
-    <label>Scrubbed preview</label>
-    <pre class="out" id="output">(nothing yet)</pre>
-    <p class="muted">Highlighted yellow = original flagged spans in context view below after scan. Green marks = placeholders after scrub.</p>
-    <div id="context" class="muted" style="margin-top:.75rem"></div>
-  </section>
+<section class="blk" id="who">
+  <div class="wrap">
+    <p class="kicker">Who it's for</p>
+    <h2>People who handle other people's details.</h2>
+    <p class="sec-lead">It's built with solo workers and small operators in Ireland in mind. That's a starting guess, not something proven yet.</p>
+    <div class="cards c2">
+      <div class="card who rv"><h3>Probably a good fit</h3>
+        <ul>
+          <li><strong>Freelancers and sole traders</strong> who ask AI to tidy up client emails</li>
+          <li><strong>Tutors, coaches and consultants</strong> working from session notes</li>
+          <li><strong>Small shops and makers</strong> answering customer messages</li>
+          <li>Anyone who has pasted something into AI and <strong>then wondered</strong> whether they should have</li>
+        </ul>
+      </div>
+      <div class="card who no rv"><h3>Not a fit</h3>
+        <ul>
+          <li>Teams that need enterprise data-loss prevention</li>
+          <li>Anyone who needs a legal, GDPR or DPC opinion</li>
+          <li>Highly sensitive data such as health records or legal files, where you need proper processes</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
 
-  <section class="card" style="margin-top:1rem">
-    <strong>What this checks (v1 patterns)</strong>
-    <ul>
-      <li>Email addresses</li>
-      <li>Irish-style mobile numbers (08x…) and common +353 forms</li>
-      <li>IBAN-like strings (including IE…)</li>
-      <li>Long digit runs that look like account / card-ish numbers</li>
-      <li>PPS-like patterns (7 digits + 1–2 letters) — <em>format guess only</em></li>
-      <li>Common street/address cue phrases with trailing detail</li>
-      <li>Words like “password”, “PPS”, “IBAN”, “account number” near digits</li>
-    </ul>
-    <details>
-      <summary>Built-in self-tests (for the YouTube build log)</summary>
-      <pre class="passfail" id="tests">Running…</pre>
-    </details>
-  </section>
+<section class="blk" id="tool">
+  <div class="wrap">
+    <p class="kicker">Try it. It's free.</p>
+    <h2>The real tool, right here.</h2>
+    <p class="sec-lead">Press <strong>Load SAMPLE</strong> to see it work on fake details, or paste your own text. Nothing is sent anywhere by this page.</p>
 
-  <footer>
-    Paste Safe v0.1 · client-side only · © experiment draft for Kuo-yuen Hui / AI Made Simple ·
-    Not affiliated with OpenAI, Google, Microsoft, or Revenue.ie ·
-    Do not paste real confidential client data into demos.
-  </footer>
-</main>
+    <div class="toolwrap rv">
+      <div class="tool">
+        <div class="toolhead"><h3>Paste Safe <span class="muted">v0.1</span></h3><span class="local">● Runs locally in your browser</span></div>
+        <div class="tgrid">
+          <div class="panel">
+            <label for="input">Paste your draft text</label>
+            <textarea id="input" placeholder="Paste text here, or press Load SAMPLE (fake details)…"></textarea>
+            <div class="row">
+              <button class="primary" id="scanBtn" type="button">Scan</button>
+              <button id="scrubBtn" type="button">Replace flags with placeholders</button>
+              <button id="copyBtn" type="button">Copy scrubbed</button>
+              <button class="sample" id="sampleBtn" type="button">Load SAMPLE</button>
+              <button id="clearBtn" type="button">Clear</button>
+            </div>
+            <p class="muted" id="summary" aria-live="polite">No scan yet.</p>
+          </div>
+          <div class="panel">
+            <span class="plabel">Findings</span>
+            <ul class="hit" id="hits"><li class="muted">Run a scan to see matches.</li></ul>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:1rem">
+          <span class="plabel">Scrubbed preview</span>
+          <pre class="out" id="output">(nothing yet)</pre>
+          <p class="muted" style="margin:.7rem 0 0">Your original text with flagged spans highlighted:</p>
+          <div id="context" class="muted"></div>
+          <details>
+            <summary>Built-in self-tests</summary>
+            <pre class="passfail mono" id="tests">Running…</pre>
+          </details>
+        </div>
+        <div class="toolwarn"><strong>Pattern matching only.</strong> It can miss things, such as names, unusual formats and anything written in words, and it can flag things that are harmless. It is not a legal or GDPR tool. Always read the text yourself before you paste it into any AI.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="drop">
+  <div class="wrap">
+    <div class="offer">
+      <div>
+        <p class="kicker">Paste Safe Monthly Drop · idea stage</p>
+        <h2>A fresh pack of safe AI files every month.</h2>
+        <p class="sec-lead">The tool stays free. I'm testing whether anyone wants a small monthly download to go with it: ready-to-use files for using AI without pasting in things you shouldn't.</p>
+        <ul class="ticks">
+          <li>Prompt templates for everyday solo work, with placeholders already in place</li>
+          <li>Checklist updates: what to strip out before you paste</li>
+          <li>Safe reply templates for common client and customer messages</li>
+          <li>New scrub tips as AI tools change (still just pattern helpers, not legal advice)</li>
+        </ul>
+        <ul class="ticks x">
+          <li>No calls, coaching or office hours. These are files only.</li>
+          <li>I won't review or scrub your real documents for you.</li>
+        </ul>
+      </div>
+      <div class="price-card rv">
+        <div class="price-in">
+          <span class="badge">Draft offer · not on sale yet</span>
+          <p class="price">€9<small> / month</small></p>
+          <p class="muted" style="margin:.5rem 0 0">An untested test price. Nothing is charged here and no payment system is set up. Cancellation terms would be agreed in writing before anyone pays anything.</p>
+          <ul class="ticks">
+            <li>Delivered as a zip of text and markdown files</li>
+            <li>Planned terms: cancel by email before the next month</li>
+          </ul>
+          <p class="btn btn-main" style="width:100%;opacity:.7;cursor:default">Enquiries opening soon</p>
+          <p class="small" style="margin:.7rem 0 0">The monthly drop is not on sale. <strong>No payment is taken anywhere on this page.</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="limits">
+  <div class="wrap">
+    <div class="limits rv">
+      <p class="kicker" style="color:#ff9dbb">Honest limits</p>
+      <h2>What Paste Safe is not.</h2>
+      <ul>
+        <li><strong>It's pattern matching.</strong> It looks for shapes of text, such as something@something or 08x numbers. It will miss things and sometimes flag harmless text.</li>
+        <li><strong>It is not a legal or GDPR tool.</strong> Using it doesn't make anything "compliant" and it isn't legal advice.</li>
+        <li><strong>It doesn't find names.</strong> "Nora from Ranelagh" gets through. You still need to check the text yourself.</li>
+        <li><strong>PPS and IBAN checks are format guesses.</strong> It doesn't validate them.</li>
+        <li><strong>It's new.</strong> This is version 0.1 of an experiment. There are no users, reviews or results to show you yet, so none are claimed.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="blk faq" id="faq">
+  <div class="wrap" style="max-width:820px">
+    <p class="kicker">FAQ</p>
+    <h2>Questions</h2>
+    <details><summary>Does my text get uploaded anywhere?</summary><p>Not by this page. The scan runs as JavaScript in your browser, and the page makes no network requests with your text. The code is public on GitHub so anyone can check. Browser extensions you've installed are outside the page's control.</p></details>
+    <details><summary>Is it really free?</summary><p>Yes. The tool is free and open source under the MIT licence. You need no account and it shows no ads.</p></details>
+    <details><summary>Does this make me GDPR compliant?</summary><p>No. It's a convenience tool that catches common patterns. For data protection obligations, see the Data Protection Commission (dataprotection.ie) or get proper advice.</p></details>
+    <details><summary>Which AI tools does it work with?</summary><p>All of them, because it works on your text before it gets there. You copy the scrubbed version and paste it wherever you like. It isn't affiliated with OpenAI, Google, Microsoft or any AI company.</p></details>
+    <details><summary>Can I buy the monthly drop?</summary><p>Not yet. It's an idea being tested. The button only opens an enquiry email, so nothing is sold or charged on this page.</p></details>
+    <details><summary>Who made this?</summary><p>Kuo-yuen Hui in Dublin, as part of the "AI Made Simple" build-in-public experiment.</p></details>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2>Check it <span class="grad">before</span> you paste it.</h2>
+    <p class="sec-lead" style="margin:0 auto 1.6rem">It's free, runs on your device and takes about ten seconds.</p>
+    <div class="ctas"><a class="btn btn-main" href="#tool">Try Paste Safe ↑</a><a class="btn btn-ghost" href="https://github.com/grogy-9/paste-safe">View the code on GitHub</a></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap fr">
+    <div>Paste Safe v0.1 · free and open source under the <a href="https://github.com/grogy-9/paste-safe/blob/main/LICENSE">MIT licence</a> · <a href="https://github.com/grogy-9/paste-safe">github.com/grogy-9/paste-safe</a></div>
+    <div>Made by Kuo-yuen Hui · Dublin, Ireland · AI Made Simple. Not affiliated with OpenAI, Google, Microsoft or Revenue.ie. Not legal advice. Don't use real client data in demos.</div>
+  </div>
+</footer>
+
 <script>
+/* ---------- Paste Safe tool logic (rules/scrub/tests carried over unchanged from tool v0.1) ---------- */
 (function () {
   const RULES = [
     { id: 'email', label: 'Email', re: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
@@ -115,17 +412,10 @@
     { id: 'password_cue', label: 'Password cue', re: /\b(password|passwd|pwd)\b\s*[:=]?\s*\S+/gi },
     { id: 'address_cue', label: 'Address-like cue', re: /\b(?:live at|address[:\s]+|eircode[:\s]+)\s*[^\n,]{5,80}/gi }
   ];
-
   const PLACEHOLDERS = {
-    email: '[EMAIL]',
-    ie_mobile: '[PHONE]',
-    iban: '[IBAN]',
-    pps_like: '[PPS_OR_ID]',
-    long_digits: '[NUMBER]',
-    password_cue: '[PASSWORD_REMOVED]',
-    address_cue: '[ADDRESS_DETAIL]'
+    email: '[EMAIL]', ie_mobile: '[PHONE]', iban: '[IBAN]', pps_like: '[PPS_OR_ID]',
+    long_digits: '[NUMBER]', password_cue: '[PASSWORD_REMOVED]', address_cue: '[ADDRESS_DETAIL]'
   };
-
   const $ = (id) => document.getElementById(id);
 
   function findHits(text) {
@@ -139,91 +429,54 @@
       }
     }
     hits.sort((a, b) => a.start - b.start || b.end - a.end);
-    // de-dupe overlapping: keep earlier/longer
-    const kept = [];
-    let cursor = -1;
-    for (const h of hits) {
-      if (h.start < cursor) continue;
-      kept.push(h);
-      cursor = h.end;
-    }
+    const kept = []; let cursor = -1;
+    for (const h of hits) { if (h.start < cursor) continue; kept.push(h); cursor = h.end; }
     return kept;
   }
-
   function scrub(text, hits) {
     if (!hits.length) return text;
-    let out = '';
-    let i = 0;
-    for (const h of hits) {
-      out += text.slice(i, h.start);
-      out += PLACEHOLDERS[h.id] || '[REDACTED]';
-      i = h.end;
-    }
-    out += text.slice(i);
-    return out;
+    let out = '', i = 0;
+    for (const h of hits) { out += text.slice(i, h.start); out += PLACEHOLDERS[h.id] || '[REDACTED]'; i = h.end; }
+    return out + text.slice(i);
   }
-
   function escapeHtml(s) {
     return s.replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
-
   function renderContext(text, hits) {
     if (!hits.length) return '<span class="muted">No flags in this text.</span>';
-    let html = '';
-    let i = 0;
-    for (const h of hits) {
-      html += escapeHtml(text.slice(i, h.start));
-      html += '<mark class="flag">' + escapeHtml(h.value) + '</mark>';
-      i = h.end;
-    }
-    html += escapeHtml(text.slice(i));
-    return html;
+    let html = '', i = 0;
+    for (const h of hits) { html += escapeHtml(text.slice(i, h.start)); html += '<mark class="flag">' + escapeHtml(h.value) + '</mark>'; i = h.end; }
+    return html + escapeHtml(text.slice(i));
   }
-
   function renderHits(hits) {
     const box = $('hits');
-    if (!hits.length) {
-      box.innerHTML = '<li><span class="stat ok">0 flags</span> Nothing matched v1 patterns.</li>';
-      return;
-    }
-    box.innerHTML = hits.map(h =>
-      '<li><span class="tag">' + escapeHtml(h.label) + '</span> <code>' + escapeHtml(h.value) + '</code></li>'
-    ).join('');
+    if (!hits.length) { box.innerHTML = '<li><span class="stat ok">0 flags</span> Nothing matched v1 patterns.</li>'; return; }
+    box.innerHTML = hits.map(h => '<li><span class="tag">' + escapeHtml(h.label) + '</span> <code>' + escapeHtml(h.value) + '</code></li>').join('');
   }
-
-  let lastHits = [];
-  let lastScrubbed = '';
-
+  let lastHits = [], lastScrubbed = '';
   function scan() {
     const text = $('input').value;
     lastHits = findHits(text);
     lastScrubbed = scrub(text, lastHits);
     $('summary').innerHTML = lastHits.length
       ? '<span class="stat bad">' + lastHits.length + ' flag(s)</span> Review before pasting into any AI tool.'
-      : '<span class="stat ok">0 flags</span> Still do a human check — patterns are incomplete.';
+      : '<span class="stat ok">0 flags</span> Still do a human check. Patterns are incomplete.';
     renderHits(lastHits);
     $('output').textContent = lastScrubbed || '(empty)';
     $('context').innerHTML = renderContext(text, lastHits);
   }
-
   $('scanBtn').onclick = scan;
   $('scrubBtn').onclick = () => { scan(); $('output').textContent = lastScrubbed; };
   $('copyBtn').onclick = async () => {
     scan();
-    try {
-      await navigator.clipboard.writeText(lastScrubbed);
-      $('summary').innerHTML += ' · copied scrubbed text';
-    } catch (e) {
-      $('summary').innerHTML += ' · copy failed — select from the scrubbed box manually';
-    }
+    try { await navigator.clipboard.writeText(lastScrubbed); $('summary').innerHTML += ' · copied scrubbed text'; }
+    catch (e) { $('summary').innerHTML += ' · copy failed. Select the text in the scrubbed box and copy it yourself.'; }
   };
   $('clearBtn').onclick = () => {
-    $('input').value = '';
-    lastHits = []; lastScrubbed = '';
+    $('input').value = ''; lastHits = []; lastScrubbed = '';
     $('summary').textContent = 'Cleared.';
     $('hits').innerHTML = '<li class="muted">Run a scan to see matches.</li>';
-    $('output').textContent = '(nothing yet)';
-    $('context').textContent = '';
+    $('output').textContent = '(nothing yet)'; $('context').textContent = '';
   };
   $('sampleBtn').onclick = () => {
     $('input').value = [
@@ -234,14 +487,10 @@
       'Password: demoPass123',
       'I live at 12 Sample Street, Dublin 2, Eircode D02 XY45.',
       'Please draft a polite reply about lesson times.'
-    ].join('\\n');
+    ].join('\n');
     scan();
   };
-
-  // --- self tests ---
-  function assert(name, cond, detail) {
-    return { name, ok: !!cond, detail: detail || '' };
-  }
+  function assert(name, cond, detail) { return { name, ok: !!cond, detail: detail || '' }; }
   function runTests() {
     const results = [];
     const t1 = findHits('Reach me at test@example.com please');
@@ -256,16 +505,48 @@
     results.push(assert('clean teaching text → 0', clean.length === 0, 'got ' + clean.length));
     const scrubbed = scrub('Email a@b.com and 087 555 0100', findHits('Email a@b.com and 087 555 0100'));
     results.push(assert('scrub replaces email+phone', scrubbed.includes('[EMAIL]') && scrubbed.includes('[PHONE]') && !scrubbed.includes('a@b.com')));
-    // nothing uploaded: structural guarantee — no fetch/XHR in this file's scan path
     results.push(assert('no network helpers in scan path', typeof findHits === 'function' && typeof scrub === 'function'));
     const failed = results.filter(r => !r.ok);
     $('tests').innerHTML = results.map(r =>
       (r.ok ? '<span class="p">PASS</span>' : '<span class="f">FAIL</span>') + ' ' + r.name + (r.detail ? ' (' + r.detail + ')' : '')
-    ).join('\\n') + '\\n\\n' + (failed.length ? failed.length + ' failed' : 'All ' + results.length + ' tests passed');
+    ).join('\n') + '\n\n' + (failed.length ? failed.length + ' failed' : 'All ' + results.length + ' tests passed');
     return failed.length === 0;
   }
   const ok = runTests();
   window.__pasteSafe = { findHits, scrub, runTests, ok };
+})();
+
+/* ---------- Hero demo animation (decorative; uses fake sample text) ---------- */
+(function () {
+  const demo = document.getElementById('demo');
+  const count = document.getElementById('dcount');
+  const steps = demo.querySelectorAll('.step');
+  const n = demo.querySelectorAll('.pii').length;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function set(s) {
+    demo.classList.remove('s2', 's3', 'scanning');
+    steps.forEach(el => el.classList.toggle('on', +el.dataset.s === s));
+    if (s === 1) count.textContent = 'Pasted, not checked yet';
+    if (s === 2) { demo.classList.add('s2'); count.textContent = n + ' details flagged'; }
+    if (s === 3) { demo.classList.add('s3'); count.textContent = 'Scrubbed. Read it over, then paste'; }
+  }
+  if (reduce) { set(3); return; }
+  function loop() {
+    set(1);
+    setTimeout(() => { void demo.offsetWidth; demo.classList.add('scanning'); }, 1400);
+    setTimeout(() => set(2), 2700);
+    setTimeout(() => set(3), 4700);
+    setTimeout(loop, 8200);
+  }
+  loop();
+})();
+
+/* ---------- Scroll reveal ---------- */
+(function () {
+  const els = document.querySelectorAll('.rv');
+  if (!('IntersectionObserver' in window)) { els.forEach(e => e.classList.add('in')); return; }
+  const io = new IntersectionObserver((ents) => ents.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
+  els.forEach(e => io.observe(e));
 })();
 </script>
 </body>
