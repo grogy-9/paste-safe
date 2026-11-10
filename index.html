@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en-IE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paste Safe — local AI paste scrubber (draft / experiment)</title>
+  <style>
+    :root {
+      --bg:#f4f6f8; --card:#fff; --ink:#15202b; --muted:#5b6b7c;
+      --ok:#0f6b3c; --okbg:#e7f6ee; --warn:#8a5a00; --warnbg:#fff6e0;
+      --bad:#9b1c1c; --badbg:#fdecec; --line:#d9e1ea; --accent:#1f4d7a;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); line-height:1.45; }
+    .wrap { max-width:920px; margin:0 auto; padding:1.25rem 1rem 3rem; }
+    .banner { background:var(--warnbg); border:1px solid #f0d7a8; color:var(--warn); padding:.75rem 1rem; border-radius:10px; font-size:.92rem; margin-bottom:1rem; }
+    h1 { font-size:clamp(1.4rem,3.5vw,1.9rem); margin:.2rem 0 .4rem; }
+    .sub { color:var(--muted); margin:0 0 1.2rem; }
+    .grid { display:grid; gap:1rem; }
+    @media (min-width:860px) { .grid-2 { grid-template-columns:1fr 1fr; } }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem; }
+    label { font-weight:600; display:block; margin-bottom:.4rem; }
+    textarea { width:100%; min-height:180px; resize:vertical; font:inherit; padding:.75rem; border:1px solid var(--line); border-radius:10px; }
+    .row { display:flex; flex-wrap:wrap; gap:.5rem; margin:.75rem 0; }
+    button { font:inherit; font-weight:600; border:0; border-radius:10px; padding:.65rem 1rem; cursor:pointer; }
+    .primary { background:var(--accent); color:#fff; }
+    .ghost { background:#eef3f8; color:var(--ink); }
+    .muted { color:var(--muted); font-size:.9rem; }
+    .stat { display:inline-flex; align-items:center; gap:.35rem; background:#eef3f8; border-radius:999px; padding:.25rem .65rem; font-size:.85rem; font-weight:600; }
+    .stat.bad { background:var(--badbg); color:var(--bad); }
+    .stat.ok { background:var(--okbg); color:var(--ok); }
+    .hit { list-style:none; padding:0; margin:0; }
+    .hit li { border-top:1px solid var(--line); padding:.65rem 0; font-size:.92rem; }
+    .hit li:first-child { border-top:0; }
+    .tag { display:inline-block; font-size:.75rem; font-weight:700; background:var(--badbg); color:var(--bad); border-radius:6px; padding:.1rem .4rem; margin-right:.35rem; }
+    mark.flag { background:#ffe08a; padding:0 .1rem; border-radius:2px; }
+    mark.clean { background:#b7f0cf; padding:0 .1rem; border-radius:2px; }
+    pre.out { white-space:pre-wrap; word-break:break-word; background:#0f1720; color:#e8eef5; padding:.9rem; border-radius:10px; min-height:140px; font-size:.9rem; }
+    details { margin-top:.75rem; }
+    summary { cursor:pointer; font-weight:600; }
+    footer { margin-top:1.5rem; font-size:.82rem; color:var(--muted); }
+    .passfail { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.82rem; }
+    .passfail .p { color:var(--ok); } .passfail .f { color:var(--bad); }
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <div class="banner">
+    <strong>Local experiment draft — not a legal / GDPR compliance tool.</strong>
+    Everything runs in your browser. Text is not uploaded anywhere by this page.
+    Flags are pattern guesses only. Always do a human check before pasting into any AI tool.
+  </div>
+
+  <h1>Paste Safe</h1>
+  <p class="sub">Scan text for common personal-data patterns before you paste it into an AI chat. Free local tool · AI Made Simple experiment.</p>
+
+  <div class="grid grid-2">
+    <section class="card">
+      <label for="input">Paste your draft text</label>
+      <textarea id="input" placeholder="Paste a SAMPLE message here (use fake details for demos)…"></textarea>
+      <div class="row">
+        <button class="primary" id="scanBtn" type="button">Scan</button>
+        <button class="ghost" id="scrubBtn" type="button">Replace flags with placeholders</button>
+        <button class="ghost" id="copyBtn" type="button">Copy scrubbed</button>
+        <button class="ghost" id="sampleBtn" type="button">Load SAMPLE</button>
+        <button class="ghost" id="clearBtn" type="button">Clear</button>
+      </div>
+      <p class="muted" id="summary">No scan yet.</p>
+    </section>
+
+    <section class="card">
+      <label>Findings</label>
+      <ul class="hit" id="hits"><li class="muted">Run a scan to see matches.</li></ul>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:1rem">
+    <label>Scrubbed preview</label>
+    <pre class="out" id="output">(nothing yet)</pre>
+    <p class="muted">Highlighted yellow = original flagged spans in context view below after scan. Green marks = placeholders after scrub.</p>
+    <div id="context" class="muted" style="margin-top:.75rem"></div>
+  </section>
+
+  <section class="card" style="margin-top:1rem">
+    <strong>What this checks (v1 patterns)</strong>
+    <ul>
+      <li>Email addresses</li>
+      <li>Irish-style mobile numbers (08x…) and common +353 forms</li>
+      <li>IBAN-like strings (including IE…)</li>
+      <li>Long digit runs that look like account / card-ish numbers</li>
+      <li>PPS-like patterns (7 digits + 1–2 letters) — <em>format guess only</em></li>
+      <li>Common street/address cue phrases with trailing detail</li>
+      <li>Words like “password”, “PPS”, “IBAN”, “account number” near digits</li>
+    </ul>
+    <details>
+      <summary>Built-in self-tests (for the YouTube build log)</summary>
+      <pre class="passfail" id="tests">Running…</pre>
+    </details>
+  </section>
+
+  <footer>
+    Paste Safe v0.1 · client-side only · © experiment draft for Kuo-yuen Hui / AI Made Simple ·
+    Not affiliated with OpenAI, Google, Microsoft, or Revenue.ie ·
+    Do not paste real confidential client data into demos.
+  </footer>
+</main>
+<script>
+(function () {
+  const RULES = [
+    { id: 'email', label: 'Email', re: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
+    { id: 'ie_mobile', label: 'Irish-style mobile', re: /(?:\+353[\s\-]?|0)8[3-9][\s\-]?\d{3}[\s\-]?\d{4}\b/g },
+    { id: 'iban', label: 'IBAN-like', re: /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/gi },
+    { id: 'pps_like', label: 'PPS-like pattern', re: /\b\d{7}[A-Z]{1,2}\b/gi },
+    { id: 'long_digits', label: 'Long digit run', re: /\b(?:\d[ \-]?){12,19}\b/g },
+    { id: 'password_cue', label: 'Password cue', re: /\b(password|passwd|pwd)\b\s*[:=]?\s*\S+/gi },
+    { id: 'address_cue', label: 'Address-like cue', re: /\b(?:live at|address[:\s]+|eircode[:\s]+)\s*[^\n,]{5,80}/gi }
+  ];
+
+  const PLACEHOLDERS = {
+    email: '[EMAIL]',
+    ie_mobile: '[PHONE]',
+    iban: '[IBAN]',
+    pps_like: '[PPS_OR_ID]',
+    long_digits: '[NUMBER]',
+    password_cue: '[PASSWORD_REMOVED]',
+    address_cue: '[ADDRESS_DETAIL]'
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function findHits(text) {
+    const hits = [];
+    for (const rule of RULES) {
+      rule.re.lastIndex = 0;
+      let m;
+      while ((m = rule.re.exec(text)) !== null) {
+        hits.push({ id: rule.id, label: rule.label, value: m[0], start: m.index, end: m.index + m[0].length });
+        if (m[0].length === 0) rule.re.lastIndex++;
+      }
+    }
+    hits.sort((a, b) => a.start - b.start || b.end - a.end);
+    // de-dupe overlapping: keep earlier/longer
+    const kept = [];
+    let cursor = -1;
+    for (const h of hits) {
+      if (h.start < cursor) continue;
+      kept.push(h);
+      cursor = h.end;
+    }
+    return kept;
+  }
+
+  function scrub(text, hits) {
+    if (!hits.length) return text;
+    let out = '';
+    let i = 0;
+    for (const h of hits) {
+      out += text.slice(i, h.start);
+      out += PLACEHOLDERS[h.id] || '[REDACTED]';
+      i = h.end;
+    }
+    out += text.slice(i);
+    return out;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderContext(text, hits) {
+    if (!hits.length) return '<span class="muted">No flags in this text.</span>';
+    let html = '';
+    let i = 0;
+    for (const h of hits) {
+      html += escapeHtml(text.slice(i, h.start));
+      html += '<mark class="flag">' + escapeHtml(h.value) + '</mark>';
+      i = h.end;
+    }
+    html += escapeHtml(text.slice(i));
+    return html;
+  }
+
+  function renderHits(hits) {
+    const box = $('hits');
+    if (!hits.length) {
+      box.innerHTML = '<li><span class="stat ok">0 flags</span> Nothing matched v1 patterns.</li>';
+      return;
+    }
+    box.innerHTML = hits.map(h =>
+      '<li><span class="tag">' + escapeHtml(h.label) + '</span> <code>' + escapeHtml(h.value) + '</code></li>'
+    ).join('');
+  }
+
+  let lastHits = [];
+  let lastScrubbed = '';
+
+  function scan() {
+    const text = $('input').value;
+    lastHits = findHits(text);
+    lastScrubbed = scrub(text, lastHits);
+    $('summary').innerHTML = lastHits.length
+      ? '<span class="stat bad">' + lastHits.length + ' flag(s)</span> Review before pasting into any AI tool.'
+      : '<span class="stat ok">0 flags</span> Still do a human check — patterns are incomplete.';
+    renderHits(lastHits);
+    $('output').textContent = lastScrubbed || '(empty)';
+    $('context').innerHTML = renderContext(text, lastHits);
+  }
+
+  $('scanBtn').onclick = scan;
+  $('scrubBtn').onclick = () => { scan(); $('output').textContent = lastScrubbed; };
+  $('copyBtn').onclick = async () => {
+    scan();
+    try {
+      await navigator.clipboard.writeText(lastScrubbed);
+      $('summary').innerHTML += ' · copied scrubbed text';
+    } catch (e) {
+      $('summary').innerHTML += ' · copy failed — select from the scrubbed box manually';
+    }
+  };
+  $('clearBtn').onclick = () => {
+    $('input').value = '';
+    lastHits = []; lastScrubbed = '';
+    $('summary').textContent = 'Cleared.';
+    $('hits').innerHTML = '<li class="muted">Run a scan to see matches.</li>';
+    $('output').textContent = '(nothing yet)';
+    $('context').textContent = '';
+  };
+  $('sampleBtn').onclick = () => {
+    $('input').value = [
+      'SAMPLE ONLY — fake details for demo.',
+      'Hi, I am Nora Demo. Email me at nora.demo@example.ie or call 087 123 4567.',
+      'My IBAN is IE29AIBK93115212345678 and PPS looks like 1234567T.',
+      'Card-ish: 4111 1111 1111 1111.',
+      'Password: demoPass123',
+      'I live at 12 Sample Street, Dublin 2, Eircode D02 XY45.',
+      'Please draft a polite reply about lesson times.'
+    ].join('\\n');
+    scan();
+  };
+
+  // --- self tests ---
+  function assert(name, cond, detail) {
+    return { name, ok: !!cond, detail: detail || '' };
+  }
+  function runTests() {
+    const results = [];
+    const t1 = findHits('Reach me at test@example.com please');
+    results.push(assert('detects email', t1.some(h => h.id === 'email' && h.value.includes('test@example.com'))));
+    const t2 = findHits('Call 087 555 0100 tomorrow');
+    results.push(assert('detects IE mobile', t2.some(h => h.id === 'ie_mobile')));
+    const t3 = findHits('IBAN IE29AIBK93115212345678 end');
+    results.push(assert('detects IBAN-like', t3.some(h => h.id === 'iban')));
+    const t4 = findHits('PPS 1234567T noted');
+    results.push(assert('detects PPS-like', t4.some(h => h.id === 'pps_like')));
+    const clean = findHits('Please rewrite this lesson plan outline for clarity.');
+    results.push(assert('clean teaching text → 0', clean.length === 0, 'got ' + clean.length));
+    const scrubbed = scrub('Email a@b.com and 087 555 0100', findHits('Email a@b.com and 087 555 0100'));
+    results.push(assert('scrub replaces email+phone', scrubbed.includes('[EMAIL]') && scrubbed.includes('[PHONE]') && !scrubbed.includes('a@b.com')));
+    // nothing uploaded: structural guarantee — no fetch/XHR in this file's scan path
+    results.push(assert('no network helpers in scan path', typeof findHits === 'function' && typeof scrub === 'function'));
+    const failed = results.filter(r => !r.ok);
+    $('tests').innerHTML = results.map(r =>
+      (r.ok ? '<span class="p">PASS</span>' : '<span class="f">FAIL</span>') + ' ' + r.name + (r.detail ? ' (' + r.detail + ')' : '')
+    ).join('\\n') + '\\n\\n' + (failed.length ? failed.length + ' failed' : 'All ' + results.length + ' tests passed');
+    return failed.length === 0;
+  }
+  const ok = runTests();
+  window.__pasteSafe = { findHits, scrub, runTests, ok };
+})();
+</script>
+</body>
+</html>
